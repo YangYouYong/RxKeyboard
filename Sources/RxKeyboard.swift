@@ -33,6 +33,7 @@ public class RxKeyboard: NSObject {
 
   // MARK: Private
 
+  fileprivate let window = RxKeyboard.applicationWindow()
   fileprivate let disposeBag = DisposeBag()
   fileprivate let panRecognizer = UIPanGestureRecognizer()
 
@@ -91,9 +92,9 @@ public class RxKeyboard: NSObject {
     // pan gesture
     let didPan = self.panRecognizer.rx.event
       .withLatestFrom(frameVariable.asObservable()) { ($0, $1) }
-      .flatMap { (gestureRecognizer, frame) -> Observable<CGRect> in
+      .flatMap { [weak self] (gestureRecognizer, frame) -> Observable<CGRect> in
         guard case .changed = gestureRecognizer.state,
-          let window = UIApplication.shared.windows.first,
+          let window = self?.window,
           frame.origin.y < UIScreen.main.bounds.height
         else { return .empty() }
         let origin = gestureRecognizer.location(in: window)
@@ -112,10 +113,21 @@ public class RxKeyboard: NSObject {
     NotificationCenter.default.rx.notification(.UIApplicationDidFinishLaunching)
       .map { _ in Void() }
       .startWith(Void()) // when RxKeyboard is initialized before UIApplication.window is created
-      .subscribe(onNext: { _ in
-        UIApplication.shared.windows.first?.addGestureRecognizer(self.panRecognizer)
+      .subscribe(onNext: { [weak self] _ in
+        guard let `self` = self else { return }
+        self.window?.addGestureRecognizer(self.panRecognizer)
       })
       .addDisposableTo(self.disposeBag)
+  }
+
+  /// Returns the first window of `UIApplication.shared`. Returns `nil` if the application has no
+  /// window. (e.g. App Extension)
+  private class func applicationWindow() -> UIWindow? {
+    // use objc selector to get shared UIApplication instance from App Extension
+    let selector = NSSelectorFromString("sharedApplication")
+    guard UIApplication.responds(to: selector) else { return nil }
+    let application = UIApplication.perform(selector).takeRetainedValue() as? UIApplication
+    return application?.windows.first
   }
 
 }
